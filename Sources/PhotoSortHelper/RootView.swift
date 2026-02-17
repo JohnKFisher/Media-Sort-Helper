@@ -179,9 +179,14 @@ struct RootView: View {
 
             Toggle("Include videos (slow-mo, cinematic, etc.)", isOn: $viewModel.includeVideos)
                 .font(.subheadline)
+            Toggle("Auto-pick best shot per group", isOn: $viewModel.autoPickBestShot)
+                .font(.subheadline)
             Toggle("Autoplay videos in preview", isOn: $viewModel.autoplayPreviewVideos)
                 .font(.subheadline)
-            Text("Off by default. Photos always include all image types (RAW, panorama, spatial, and more).")
+            Text("Auto-pick uses face/eyes/smile, framing, focus, lighting, and color heuristics. Suggestions are only applied after you open each group, and you can always override manually.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Text("Videos are off by default. Photos always include all image types (RAW, panorama, spatial, and more).")
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
@@ -275,8 +280,16 @@ private struct ReviewGroupView: View {
         return viewModel.isVideo(assetID: highlightedAssetID)
     }
 
+    private var highlightedScoreExplanation: String? {
+        guard let highlightedAssetID else {
+            return nil
+        }
+
+        return viewModel.bestShotExplanation(for: highlightedAssetID, in: group)
+    }
+
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Group \(viewModel.currentGroupIndex + 1) of \(viewModel.groups.count)")
@@ -293,26 +306,32 @@ private struct ReviewGroupView: View {
 
                 Spacer()
 
-                HStack {
+                HStack(spacing: 10) {
                     Button("Previous") {
                         viewModel.previousGroup()
                     }
+                    .frame(minWidth: 110)
                     .disabled(viewModel.currentGroupIndex == 0)
 
                     Button("Next") {
                         viewModel.nextGroup()
                     }
+                    .frame(minWidth: 110)
                     .disabled(viewModel.currentGroupIndex >= viewModel.groups.count - 1)
                 }
             }
 
-            HStack {
-                Button("Keep all") {
-                    viewModel.keepAll(in: group)
-                }
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 10) {
+                    Button("Keep all") {
+                        viewModel.keepAll(in: group)
+                    }
+                    .frame(minWidth: 110)
 
-                Button("Discard all") {
-                    viewModel.discardAll(in: group)
+                    Button("Discard all") {
+                        viewModel.discardAll(in: group)
+                    }
+                    .frame(minWidth: 120)
                 }
 
                 Text("Tip: up/down changes highlight, ` toggles keep/discard, left/right changes group.")
@@ -320,7 +339,7 @@ private struct ReviewGroupView: View {
                     .foregroundStyle(.secondary)
             }
 
-            HStack(alignment: .top, spacing: 16) {
+            HStack(alignment: .top, spacing: 20) {
                 ScrollViewReader { proxy in
                     ScrollView {
                         LazyVStack(spacing: 6) {
@@ -329,6 +348,8 @@ private struct ReviewGroupView: View {
                                     group: group,
                                     assetID: assetID,
                                     isKept: viewModel.isKept(assetID: assetID, in: group),
+                                    isSuggestedBest: viewModel.isSuggestedBest(assetID: assetID, in: group),
+                                    scoreExplanation: viewModel.bestShotExplanation(for: assetID, in: group),
                                     isHighlighted: viewModel.isHighlighted(assetID: assetID, in: group),
                                     imageHeight: cardHeight,
                                     onSelected: {
@@ -353,7 +374,8 @@ private struct ReviewGroupView: View {
                     player: hoverPreviewPlayer,
                     isVideo: activePreviewIsVideo,
                     isLoadingVideo: hoverPreviewLoadingVideo,
-                    autoplayEnabled: viewModel.autoplayPreviewVideos
+                    autoplayEnabled: viewModel.autoplayPreviewVideos,
+                    scoreExplanation: highlightedScoreExplanation
                 )
                     .frame(minWidth: 920, idealWidth: 1020, maxWidth: .infinity)
                     .frame(maxHeight: .infinity, alignment: .top)
@@ -365,7 +387,7 @@ private struct ReviewGroupView: View {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
                     VStack(alignment: .leading, spacing: 6) {
-                        Text("Marked for discard across all groups: \(viewModel.discardCountTotal)")
+                        Text("Marked for discard across reviewed groups: \(viewModel.discardCountTotal)")
                             .font(.headline)
                         Text("Nothing is deleted until you arm deletion, then confirm.")
                             .font(.footnote)
@@ -399,9 +421,10 @@ private struct ReviewGroupView: View {
                 .font(.footnote)
             }
         }
-        .padding(20)
+        .padding(24)
         .onAppear {
             viewModel.ensureHighlightedAsset(in: group)
+            viewModel.markGroupReviewed(group)
         }
         .task(id: highlightedAssetID) {
             await loadPreview(for: highlightedAssetID)
@@ -411,6 +434,7 @@ private struct ReviewGroupView: View {
             hoverPreviewPlayer = nil
             hoverPreviewLoadingVideo = false
             viewModel.ensureHighlightedAsset(in: group)
+            viewModel.markGroupReviewed(group)
 
             let previewCandidates = Array(group.assetIDs.prefix(3))
             Task {
@@ -523,12 +547,22 @@ private struct HoverZoomPanel: View {
     let isVideo: Bool
     let isLoadingVideo: Bool
     let autoplayEnabled: Bool
+    let scoreExplanation: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Preview Box (Hover)")
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Preview Box (Hover)")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+
+                if let scoreExplanation {
+                    Text(scoreExplanation)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(3)
+                }
+            }
 
             ZStack {
                 RoundedRectangle(cornerRadius: 12)

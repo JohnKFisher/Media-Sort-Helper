@@ -58,6 +58,7 @@ struct ScanSettings {
     var dateFrom: Date?
     var dateTo: Date?
     var includeVideos: Bool
+    var autoPickBestShot: Bool
     var maxTimeGapSeconds: TimeInterval
     var similarityDistanceThreshold: Float
     var maxAssetsToScan: Int
@@ -84,9 +85,23 @@ struct ScanProgress {
 
 struct ScanResult {
     var groups: [ReviewGroup]
+    var bestAssetByGroupID: [UUID: String]
+    var bestShotScoresByAssetID: [String: BestShotScoreBreakdown]
     var assetLookup: [String: PHAsset]
     var scannedAssetCount: Int
     var temporalClusterCount: Int
+}
+
+struct BestShotScoreBreakdown {
+    var totalScore: Double
+    var facePresence: Double
+    var framing: Double
+    var eyesOpen: Double
+    var smile: Double
+    var sharpness: Double
+    var lighting: Double
+    var color: Double
+    var contrast: Double
 }
 
 enum ReviewError: LocalizedError {

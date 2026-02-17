@@ -15,6 +15,7 @@ final class ReviewViewModel: ObservableObject {
     @Published var rangeStartDate = Calendar.current.date(byAdding: .month, value: -1, to: Date()) ?? Date()
     @Published var rangeEndDate = Date()
     @Published var includeVideos = false
+    @Published var autoPickBestShot = true
     @Published var autoplayPreviewVideos = false
 
     @Published var maxTimeGapSeconds: Double = 8
@@ -47,6 +48,9 @@ final class ReviewViewModel: ObservableObject {
     private var thumbnailKeysByAssetID: [String: Set<String>] = [:]
     private var videoAssetCache: [String: AVAsset] = [:]
     private var mediaBadgesCache: [String: [String]] = [:]
+    private var suggestedBestAssetByGroup: [UUID: String] = [:]
+    private var bestShotScoresByAssetID: [String: BestShotScoreBreakdown] = [:]
+    private var reviewedGroupIDs: Set<UUID> = []
     private var assetLookup: [String: PHAsset] = [:]
     private var scanTask: Task<Void, Never>?
     private var prefetchTask: Task<Void, Never>?
@@ -120,6 +124,7 @@ final class ReviewViewModel: ObservableObject {
             dateFrom: dateFrom,
             dateTo: dateTo,
             includeVideos: includeVideos,
+            autoPickBestShot: autoPickBestShot,
             maxTimeGapSeconds: maxTimeGapSeconds,
             similarityDistanceThreshold: Float(similarityDistanceThreshold),
             maxAssetsToScan: maxAssetsToScan
@@ -131,6 +136,9 @@ final class ReviewViewModel: ObservableObject {
         groups = []
         keepSelectionsByGroup = [:]
         highlightedAssetByGroup = [:]
+        suggestedBestAssetByGroup = [:]
+        bestShotScoresByAssetID = [:]
+        reviewedGroupIDs = []
         currentGroupIndex = 0
         assetLookup = [:]
         mediaBadgesCache = [:]
@@ -162,6 +170,8 @@ final class ReviewViewModel: ObservableObject {
                 self.temporalClusterCount = result.temporalClusterCount
                 self.assetLookup = result.assetLookup
                 self.groups = result.groups
+                self.suggestedBestAssetByGroup = result.bestAssetByGroupID
+                self.bestShotScoresByAssetID = result.bestShotScoresByAssetID
                 self.currentGroupIndex = 0
                 self.initializeDefaultSelections()
                 self.schedulePrefetchAndCacheMaintenance()
@@ -255,6 +265,48 @@ final class ReviewViewModel: ObservableObject {
         highlightedAssetID(in: group) == assetID
     }
 
+    func isSuggestedBest(assetID: String, in group: ReviewGroup) -> Bool {
+        suggestedBestAssetByGroup[group.id] == assetID
+    }
+
+    func bestShotExplanation(for assetID: String, in group: ReviewGroup) -> String {
+        if let score = bestShotScoresByAssetID[assetID] {
+            let total = Int((score.totalScore * 100).rounded())
+            let focus = Int((score.sharpness * 100).rounded())
+            let light = Int((score.lighting * 100).rounded())
+            let framing = Int((score.framing * 100).rounded())
+            let eyes = Int((score.eyesOpen * 100).rounded())
+            let smile = Int((score.smile * 100).rounded())
+            let face = Int((score.facePresence * 100).rounded())
+            let color = Int((score.color * 100).rounded())
+            let contrast = Int((score.contrast * 100).rounded())
+            let status = isSuggestedBest(assetID: assetID, in: group)
+                ? "Suggested best in this group."
+                : "Scored for comparison (not top pick)."
+
+            return "\(status)\nTotal \(total) • Focus \(focus) • Light \(light) • Framing \(framing) • Eyes \(eyes) • Smile \(smile) • Faces \(face) • Color \(color) • Contrast \(contrast)"
+        }
+
+        if isVideo(assetID: assetID) {
+            return "Video clip: auto-pick quality scoring is skipped (manual choice only)."
+        }
+
+        return "No quality score available for this item."
+    }
+
+    func markGroupReviewed(_ group: ReviewGroup) {
+        let inserted = reviewedGroupIDs.insert(group.id).inserted
+        guard inserted else {
+            return
+        }
+
+        guard autoPickBestShot else {
+            return
+        }
+
+        applyBestShotSuggestion(for: group)
+    }
+
     func ensureHighlightedAsset(in group: ReviewGroup) {
         guard let highlighted = highlightedAssetID(in: group) else {
             highlightedAssetByGroup.removeValue(forKey: group.id)
@@ -329,6 +381,10 @@ final class ReviewViewModel: ObservableObject {
         var ids: Set<String> = []
 
         for group in groups {
+            guard reviewedGroupIDs.contains(group.id) else {
+                continue
+            }
+
             let kept = keepSelections(for: group)
             for assetID in group.assetIDs where !kept.contains(assetID) {
                 ids.insert(assetID)
@@ -473,6 +529,9 @@ final class ReviewViewModel: ObservableObject {
                 self.groups = []
                 self.keepSelectionsByGroup = [:]
                 self.highlightedAssetByGroup = [:]
+                self.suggestedBestAssetByGroup = [:]
+                self.bestShotScoresByAssetID = [:]
+                self.reviewedGroupIDs = []
                 self.assetLookup = [:]
                 self.mediaBadgesCache = [:]
                 self.thumbnailKeysByAssetID = [:]
@@ -506,6 +565,16 @@ final class ReviewViewModel: ObservableObject {
             keepSelectionsByGroup[group.id] = Set(group.assetIDs)
             highlightedAssetByGroup[group.id] = group.assetIDs.first
         }
+    }
+
+    private func applyBestShotSuggestion(for group: ReviewGroup) {
+        guard let suggestedID = suggestedBestAssetByGroup[group.id],
+              group.assetIDs.contains(suggestedID) else {
+            return
+        }
+
+        keepSelectionsByGroup[group.id] = [suggestedID]
+        highlightedAssetByGroup[group.id] = suggestedID
     }
 
     private func moveHighlight(in group: ReviewGroup, delta: Int) {

@@ -7,6 +7,8 @@ struct AssetCardView: View {
     let group: ReviewGroup
     let assetID: String
     let isKept: Bool
+    let isSuggestedBest: Bool
+    let scoreExplanation: String
     let isHighlighted: Bool
     let imageHeight: CGFloat
     let onSelected: () -> Void
@@ -36,7 +38,12 @@ struct AssetCardView: View {
                 HStack(alignment: .top) {
                     mediaBadgeStrip
                     Spacer()
-                    statusBadge
+                    VStack(alignment: .trailing, spacing: 4) {
+                        if isSuggestedBest {
+                            bestShotBadge
+                        }
+                        statusBadge
+                    }
                 }
                 .padding(8)
             }
@@ -69,6 +76,7 @@ struct AssetCardView: View {
                 .stroke(Color.accentColor.opacity(isHighlighted ? 0.95 : 0), lineWidth: isHighlighted ? 4 : 0)
         )
         .shadow(color: isHighlighted ? Color.accentColor.opacity(0.28) : .clear, radius: isHighlighted ? 8 : 0)
+        .help(scoreExplanation)
         .contentShape(RoundedRectangle(cornerRadius: 12))
         .onTapGesture {
             onSelected()
@@ -106,6 +114,17 @@ struct AssetCardView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(isKept ? Color.green.opacity(0.85) : Color.red.opacity(0.85))
+            .foregroundStyle(.white)
+            .clipShape(Capsule())
+    }
+
+    @ViewBuilder
+    private var bestShotBadge: some View {
+        Text("BEST")
+            .font(.caption2.bold())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.orange.opacity(0.9))
             .foregroundStyle(.white)
             .clipShape(Capsule())
     }

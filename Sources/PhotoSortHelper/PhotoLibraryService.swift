@@ -184,8 +184,18 @@ final class PhotoLibraryService: @unchecked Sendable {
         }
     }
 
-    func requestCGImage(for asset: PHAsset, targetSize: CGSize) async -> CGImage? {
-        guard let image = await requestThumbnail(for: asset, targetSize: targetSize) else {
+    func requestCGImage(
+        for asset: PHAsset,
+        targetSize: CGSize,
+        contentMode: PHImageContentMode = .aspectFill
+    ) async -> CGImage? {
+        guard
+            let image = await requestThumbnail(
+                for: asset,
+                targetSize: targetSize,
+                contentMode: contentMode
+            )
+        else {
             return nil
         }
 
