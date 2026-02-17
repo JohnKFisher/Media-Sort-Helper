@@ -41,7 +41,9 @@ struct RootView: View {
                 viewModel.deleteMarkedAssets()
             }
         } message: {
-            Text("This moves \(viewModel.discardCountTotal) photo(s) to Recently Deleted in Apple Photos. Nothing is permanently erased immediately, but this still changes your library.")
+            Text(
+                "This moves \(viewModel.discardCountTotal) photo(s) to Recently Deleted in Apple Photos.\n\(viewModel.estimatedDiscardSummary)\nNothing is permanently erased immediately, but this still changes your library."
+            )
         }
         .alert("Error", isPresented: Binding(
             get: { viewModel.errorMessage != nil },
@@ -61,8 +63,12 @@ struct RootView: View {
         GeometryReader { proxy in
             ScrollView {
                 VStack(alignment: .leading, spacing: 18) {
-                    Text("Photo Sort Helper")
+                    Text(AppMetadata.displayName)
                         .font(.title2.bold())
+
+                    Text(AppMetadata.releaseLabel)
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(sidebarSecondaryTextColor)
 
                     Text("Find very similar photos taken close together, then decide what to keep. By default, everything is kept until you explicitly mark photos to discard.")
                         .font(.subheadline)
@@ -350,6 +356,34 @@ private struct ReviewGroupView: View {
         return viewModel.bestShotExplanation(for: highlightedAssetID, in: group)
     }
 
+    private var highlightedMediaBadges: [String] {
+        guard let highlightedAssetID else {
+            return []
+        }
+        return viewModel.mediaBadges(for: highlightedAssetID)
+    }
+
+    private var highlightedIsKept: Bool {
+        guard let highlightedAssetID else {
+            return true
+        }
+        return viewModel.isKept(assetID: highlightedAssetID, in: group)
+    }
+
+    private var highlightedIsSuggestedBest: Bool {
+        guard let highlightedAssetID else {
+            return false
+        }
+        return viewModel.isSuggestedBest(assetID: highlightedAssetID, in: group)
+    }
+
+    private var highlightedIsSuggestedDiscard: Bool {
+        guard let highlightedAssetID else {
+            return false
+        }
+        return viewModel.isSuggestedDiscard(assetID: highlightedAssetID, in: group)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 20) {
             HStack(alignment: .top) {
@@ -361,9 +395,22 @@ private struct ReviewGroupView: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
 
-                    Text("Keep: \(viewModel.keptCount(in: group))  •  Discard: \(viewModel.discardCount(in: group))")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
+                    HStack(spacing: 8) {
+                        Text("Keep: \(viewModel.keptCount(in: group))  •  Discard: \(viewModel.discardCount(in: group))")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+
+                        Text(viewModel.isGroupReviewed(group) ? "Reviewed" : "Unreviewed")
+                            .font(.caption2.weight(.semibold))
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(
+                                (viewModel.isGroupReviewed(group) ? Color.green : Color.orange)
+                                    .opacity(0.88),
+                                in: Capsule()
+                            )
+                            .foregroundStyle(.white)
+                    }
                 }
 
                 Spacer()
@@ -438,7 +485,11 @@ private struct ReviewGroupView: View {
                     isVideo: activePreviewIsVideo,
                     isLoadingVideo: hoverPreviewLoadingVideo,
                     autoplayEnabled: viewModel.autoplayPreviewVideos,
-                    scoreExplanation: highlightedScoreExplanation
+                    scoreExplanation: highlightedScoreExplanation,
+                    mediaBadges: highlightedMediaBadges,
+                    isKept: highlightedIsKept,
+                    isSuggestedBest: highlightedIsSuggestedBest,
+                    isSuggestedDiscard: highlightedIsSuggestedDiscard
                 )
                     .frame(minWidth: 920, idealWidth: 1020, maxWidth: .infinity)
                     .frame(maxHeight: .infinity, alignment: .top)
@@ -452,6 +503,12 @@ private struct ReviewGroupView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         Text("Marked for discard across reviewed groups: \(viewModel.discardCountTotal)")
                             .font(.headline)
+                        Text("Reviewed groups: \(viewModel.reviewedGroupCount) of \(viewModel.groups.count)")
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                        Text(viewModel.estimatedDiscardSummary)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
                         Text("Nothing is deleted until you arm deletion, then confirm.")
                             .font(.footnote)
                             .foregroundStyle(.secondary)
@@ -611,6 +668,10 @@ private struct HoverZoomPanel: View {
     let isLoadingVideo: Bool
     let autoplayEnabled: Bool
     let scoreExplanation: String?
+    let mediaBadges: [String]
+    let isKept: Bool
+    let isSuggestedBest: Bool
+    let isSuggestedDiscard: Bool
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -668,11 +729,85 @@ private struct HoverZoomPanel: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .overlay(alignment: .top) {
+                if shouldShowOverlayBadges {
+                    HStack(alignment: .top) {
+                        mediaBadgeStrip
+                        Spacer()
+                        VStack(alignment: .trailing, spacing: 6) {
+                            if isSuggestedDiscard {
+                                discardSuggestionBadge
+                            }
+                            if isSuggestedBest {
+                                bestShotBadge
+                            }
+                            statusBadge
+                        }
+                    }
+                    .padding(18)
+                }
+            }
             .frame(maxWidth: .infinity, minHeight: 460, maxHeight: .infinity)
             .clipShape(RoundedRectangle(cornerRadius: 12))
         }
         .padding(12)
         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private var shouldShowOverlayBadges: Bool {
+        image != nil || player != nil || isLoadingVideo || isVideo
+    }
+
+    @ViewBuilder
+    private var mediaBadgeStrip: some View {
+        if mediaBadges.isEmpty {
+            EmptyView()
+        } else {
+            HStack(spacing: 4) {
+                ForEach(mediaBadges, id: \.self) { badge in
+                    Text(badge)
+                        .font(.caption2.weight(.semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(Color.black.opacity(0.65))
+                        .foregroundStyle(.white)
+                        .clipShape(Capsule())
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var statusBadge: some View {
+        Text(isKept ? "KEEP" : "DISCARD")
+            .font(.caption2.bold())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(isKept ? Color.green.opacity(0.85) : Color.red.opacity(0.85))
+            .foregroundStyle(.white)
+            .clipShape(Capsule())
+    }
+
+    @ViewBuilder
+    private var bestShotBadge: some View {
+        Text("BEST")
+            .font(.caption2.bold())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.orange.opacity(0.9))
+            .foregroundStyle(.white)
+            .clipShape(Capsule())
+    }
+
+    @ViewBuilder
+    private var discardSuggestionBadge: some View {
+        Text("AUTO DISCARD")
+            .font(.caption2.bold())
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(Color.red.opacity(0.92))
+            .foregroundStyle(.white)
+            .clipShape(Capsule())
     }
 }
 

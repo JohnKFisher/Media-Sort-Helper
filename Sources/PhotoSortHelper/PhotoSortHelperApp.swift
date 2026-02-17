@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 @main
@@ -6,12 +7,19 @@ struct PhotoSortHelperApp: App {
     @StateObject private var viewModel = ReviewViewModel()
 
     var body: some Scene {
-        WindowGroup("Photo Sort Helper") {
+        WindowGroup(AppMetadata.displayName) {
             RootView()
                 .environmentObject(viewModel)
                 .frame(minWidth: 1140, minHeight: 780)
         }
         .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About \(AppMetadata.displayName)") {
+                    NSApp.orderFrontStandardAboutPanel(options: aboutPanelOptions)
+                    NSApp.activate(ignoringOtherApps: true)
+                }
+            }
+
             CommandMenu("Review Navigation") {
                 Button("Previous Group") {
                     viewModel.previousGroup()
@@ -46,5 +54,14 @@ struct PhotoSortHelperApp: App {
                 .disabled(!viewModel.hasHighlightInCurrentGroup)
             }
         }
+    }
+
+    private var aboutPanelOptions: [NSApplication.AboutPanelOptionKey: Any] {
+        [
+            .applicationName: AppMetadata.displayName,
+            .applicationVersion: AppMetadata.version,
+            .version: "Build \(AppMetadata.build)",
+            .credits: NSAttributedString(string: "Photo Sort Helper \(AppMetadata.version)\nReview similar photos safely. Nothing is deleted until you arm deletion and confirm.")
+        ]
     }
 }

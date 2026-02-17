@@ -6,6 +6,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Bring the first app window to the front on launch.
         NSApp.setActivationPolicy(.regular)
+        if let appIcon = Self.loadAppIcon() {
+            NSApp.applicationIconImage = appIcon
+        }
         NSApp.activate(ignoringOtherApps: true)
 
         installWindowObservers()
@@ -82,5 +85,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         window.toolbarStyle = .expanded
         window.toolbar?.showsBaselineSeparator = true
         window.isMovableByWindowBackground = false
+    }
+
+    private static func loadAppIcon() -> NSImage? {
+        if let namedIcon = NSImage(named: "AppIcon") {
+            return namedIcon
+        }
+
+        guard let fallbackURL = Bundle.module.url(
+            forResource: "icon_512x512@2x",
+            withExtension: "png",
+            subdirectory: "Assets.xcassets/AppIcon.appiconset"
+        ) else {
+            return nil
+        }
+
+        return NSImage(contentsOf: fallbackURL)
     }
 }

@@ -243,6 +243,52 @@ final class PhotoLibraryService: @unchecked Sendable {
         }
     }
 
+    func fetchAssetsByLocalIdentifier(_ assetIDs: [String]) -> [String: PHAsset] {
+        guard !assetIDs.isEmpty else {
+            return [:]
+        }
+
+        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: assetIDs, options: nil)
+        var lookup: [String: PHAsset] = [:]
+        lookup.reserveCapacity(fetchResult.count)
+
+        for index in 0..<fetchResult.count {
+            let asset = fetchResult.object(at: index)
+            lookup[asset.localIdentifier] = asset
+        }
+
+        return lookup
+    }
+
+    func estimatedByteSize(forAssetID assetID: String) -> Int64? {
+        let fetchResult = PHAsset.fetchAssets(withLocalIdentifiers: [assetID], options: nil)
+        guard let asset = fetchResult.firstObject else {
+            return nil
+        }
+
+        return estimatedByteSize(for: asset)
+    }
+
+    func estimatedByteSize(for asset: PHAsset) -> Int64? {
+        let resources = PHAssetResource.assetResources(for: asset)
+        guard !resources.isEmpty else {
+            return nil
+        }
+
+        var total: Int64 = 0
+        for resource in resources {
+            if let size = resource.value(forKey: "fileSize") as? CLong {
+                total += Int64(size)
+            } else if let size = resource.value(forKey: "fileSize") as? Int64 {
+                total += size
+            } else if let size = resource.value(forKey: "fileSize") as? NSNumber {
+                total += size.int64Value
+            }
+        }
+
+        return total > 0 ? total : nil
+    }
+
     func deleteAssets(withIdentifiers assetIDs: [String]) async throws {
         guard !assetIDs.isEmpty else {
             return

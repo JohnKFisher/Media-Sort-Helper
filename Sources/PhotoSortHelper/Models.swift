@@ -1,7 +1,7 @@
 import Foundation
 import Photos
 
-enum PhotoSourceMode: String, CaseIterable, Identifiable {
+enum PhotoSourceMode: String, CaseIterable, Identifiable, Codable, Sendable {
     case allPhotos
     case album
 
@@ -15,7 +15,7 @@ enum PhotoSourceMode: String, CaseIterable, Identifiable {
     }
 }
 
-enum AlbumKind: String, Hashable {
+enum AlbumKind: String, Hashable, Codable, Sendable {
     case user
     case smart
 
@@ -27,12 +27,12 @@ enum AlbumKind: String, Hashable {
     }
 }
 
-enum AlbumSourceKind: String, Hashable {
+enum AlbumSourceKind: String, Hashable, Codable, Sendable {
     case assetCollection
     case collectionList
 }
 
-struct AlbumOption: Identifiable, Hashable {
+struct AlbumOption: Identifiable, Hashable, Codable, Sendable {
     let localIdentifier: String
     let sourceKind: AlbumSourceKind
     let title: String
@@ -52,7 +52,7 @@ struct AlbumOption: Identifiable, Hashable {
     }
 }
 
-struct ScanSettings {
+struct ScanSettings: Sendable {
     var sourceMode: PhotoSourceMode
     var selectedAlbumID: String?
     var dateFrom: Date?
@@ -68,26 +68,26 @@ struct ScanSettings {
     var deepPassBlendWeight: Double = 0.10
 }
 
-struct ReviewGroup: Identifiable, Hashable {
+struct ReviewGroup: Identifiable, Hashable, Codable, Sendable {
     let id: UUID
     var assetIDs: [String]
     let startDate: Date
     let endDate: Date
 
-    init(assetIDs: [String], startDate: Date, endDate: Date) {
-        self.id = UUID()
+    init(id: UUID = UUID(), assetIDs: [String], startDate: Date, endDate: Date) {
+        self.id = id
         self.assetIDs = assetIDs
         self.startDate = startDate
         self.endDate = endDate
     }
 }
 
-struct ScanProgress {
+struct ScanProgress: Sendable {
     var fractionCompleted: Double
     var message: String
 }
 
-struct ScanResult {
+struct ScanResult: Sendable {
     var groups: [ReviewGroup]
     var bestAssetByGroupID: [UUID: String]
     var suggestedDiscardAssetIDsByGroupID: [UUID: Set<String>]
@@ -97,7 +97,7 @@ struct ScanResult {
     var temporalClusterCount: Int
 }
 
-struct BestShotScoreBreakdown {
+struct BestShotScoreBreakdown: Codable, Sendable {
     var totalScore: Double
     var baseHeuristicScore: Double
     var learnedPreferenceScore: Double
@@ -116,7 +116,7 @@ struct BestShotScoreBreakdown {
     var usedDeepPass: Bool
 }
 
-enum BestShotFeature: String, CaseIterable, Codable {
+enum BestShotFeature: String, CaseIterable, Codable, Sendable {
     case facePresence
     case framing
     case eyesOpen
@@ -129,7 +129,7 @@ enum BestShotFeature: String, CaseIterable, Codable {
     case contrast
 }
 
-struct BestShotFeatureWeights: Codable, Hashable {
+struct BestShotFeatureWeights: Codable, Hashable, Sendable {
     var facePresence: Double
     var framing: Double
     var eyesOpen: Double
@@ -214,7 +214,7 @@ struct BestShotFeatureWeights: Codable, Hashable {
     }
 }
 
-struct BestShotPersonalization {
+struct BestShotPersonalization: Sendable {
     var weights: BestShotFeatureWeights
     var confidence: Double
 

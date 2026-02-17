@@ -12,6 +12,9 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "PhotoSortHelper",
+            resources: [
+                .process("Assets.xcassets")
+            ],
             linkerSettings: [
                 // Embed Info.plist so the executable has a bundle identifier and usage strings.
                 .unsafeFlags([

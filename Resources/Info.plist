@@ -3,24 +3,28 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>PhotoSortHelper</string>
+    <string>Photo Sort Helper</string>
     <key>CFBundleDisplayName</key>
-    <string>PhotoSortHelper</string>
+    <string>Photo Sort Helper</string>
     <key>CFBundleIdentifier</key>
     <string>com.jkfisher.photosorthelper</string>
     <key>CFBundleExecutable</key>
     <string>PhotoSortHelper</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
+    <key>CFBundleIconName</key>
+    <string>AppIcon</string>
     <key>CFBundleShortVersionString</key>
-    <string>0.1.0</string>
+    <string>1.0</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>100</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright © 2026 JK Fisher. All rights reserved.</string>
     <key>NSPhotoLibraryUsageDescription</key>
-    <string>PhotoSortHelper needs access to your photo library to find similar photos for review.</string>
+    <string>Photo Sort Helper needs access to your photo library to find similar photos for review.</string>
     <key>NSPhotoLibraryAddUsageDescription</key>
-    <string>PhotoSortHelper needs permission to move photos you choose to Recently Deleted.</string>
+    <string>Photo Sort Helper needs permission to move photos you choose to Recently Deleted.</string>
 </dict>
 </plist>
