@@ -38,7 +38,7 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 1. Open this folder in Xcode:
 
 ```bash
-open /Users/jkfisher/Documents/PhotoSortHelper/Package.swift
+open Package.swift
 ```
 
 2. In Xcode, click the Run button.
@@ -53,7 +53,7 @@ open /Users/jkfisher/Documents/PhotoSortHelper/Package.swift
 To build a double-clickable app bundle in `dist/` (with proper Finder icon):
 
 ```bash
-cd /Users/jkfisher/Documents/PhotoSortHelper
+cd /path/to/PhotoSortHelper
 ./scripts/build_app.sh
 ```
 
