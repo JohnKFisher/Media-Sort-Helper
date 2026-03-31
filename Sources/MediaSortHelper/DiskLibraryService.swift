@@ -124,6 +124,7 @@ final class DiskLibraryService: @unchecked Sendable {
         )
     }
 
+    @MainActor
     func thumbnail(for item: DiskItem, maxPixel: CGFloat) async -> NSImage? {
         switch item.mediaKind {
         case .image:
@@ -303,6 +304,7 @@ final class DiskLibraryService: @unchecked Sendable {
         return formatter
     }
 
+    @MainActor
     private func imageThumbnail(for url: URL, maxPixel: CGFloat) async -> NSImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             return nil
@@ -321,6 +323,7 @@ final class DiskLibraryService: @unchecked Sendable {
         return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
     }
 
+    @MainActor
     private func videoThumbnail(for url: URL, maxPixel: CGFloat) async -> NSImage? {
         let asset = AVURLAsset(url: url)
         let generator = AVAssetImageGenerator(asset: asset)
