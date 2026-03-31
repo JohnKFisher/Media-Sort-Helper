@@ -1,39 +1,43 @@
-# PhotoSortHelper (macOS)
+# AmySortHelper (macOS)
 
-A safety-first macOS app to help you review bursts/near-duplicate photos in Apple Photos.
+A safety-first macOS app for reviewing files on disk and sorting reviewed items into `Keep` or `Delete`.
+
+## Folder Layout
+
+The app expects a root folder (default):
+
+`/Users/jkfisher/Resilio Sync/Quickswap/Amy Photos/`
+
+Inside that root, it reads files from:
+
+- `Current Sort` (required source folder)
+
+And commits reviewed files to:
+
+- `Keep` (created on commit if missing)
+- `Delete` (created on commit if missing)
 
 ## What It Does
 
-- Connects to your Apple Photos library using PhotoKit.
-- Lets you scan either:
-  - all photos, or
-  - a specific album.
-- Lets you set an optional date range.
-- Finds candidate groups by:
-  - photos taken close together in time, and
-  - visual similarity (Apple Vision feature prints).
-- Shows one group at a time so you can decide what to keep.
-- Defaults to **keep everything** until you explicitly mark photos to discard.
-- Only changes your library when you explicitly queue items into review albums.
+- Scans top-level files in `Current Sort` (no recursion).
+- Includes image and video files.
+- Shows capture date when available (EXIF/video metadata), with file date fallback.
+- Uses singleton review only (oldest first).
+- Defaults every loaded item to `Delete` until changed.
+- Moves only **reviewed** items on commit.
+- Uses a commit preview with counts/samples and safety confirmation.
+- Does not persist in-progress review sessions across launches.
 
-## Safety Guarantees in This App
+## Safety Behavior
 
-- No automatic deletion.
-- No file-level writes to your Photos library package.
-- No destructive delete operation from this app.
-- Marked discards can be queued to **Files to Manually Delete** for final human review in Apple Photos.
+- No background network calls.
+- No automatic file moves.
+- Commit is user-initiated.
+- Commit requires arming confirmation.
+- Commits over 200 files require a second confirmation.
+- Name conflicts auto-rename (`name (2).ext`) instead of overwrite.
 
-## Install Prerequisites
-
-1. Install **Xcode** from the Mac App Store.
-2. Open Xcode once and accept the license.
-3. In Terminal, run:
-
-```bash
-sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
-```
-
-## Run The App
+## Run In Xcode
 
 1. Open this folder in Xcode:
 
@@ -41,33 +45,18 @@ sudo xcode-select -s /Applications/Xcode.app/Contents/Developer
 open Package.swift
 ```
 
-2. In Xcode, click the Run button.
-3. When macOS asks for Photos access, click **Allow**.
-4. Choose scan settings on the left.
-5. Click **Scan for Similar Photos**.
-6. Review each group and toggle Keep/Discard by clicking cards.
-7. If you want to review marked discards in Photos, click **Queue Marked for Manual Delete (Continue)**.
+2. Build and run.
+3. Confirm root folder path on the left.
+4. Add files to `Current Sort`.
+5. Click **Scan Current Sort**.
+6. Review items and assign Keep/Delete.
+7. Arm commit and click **Commit Move to Keep/Delete**.
 
-## Build A Standalone .app
-
-To build a double-clickable app bundle in `dist/` (with proper Finder icon):
+## Build Standalone .app
 
 ```bash
-cd /path/to/PhotoSortHelper
+cd /path/to/AmySortHelper
 ./scripts/build_app.sh
 ```
 
-Then copy `dist/Photo Sort Helper.app` to `/Applications`.
-
-## Suggested First Run
-
-- Use an album first (small scope).
-- Keep default settings except:
-  - `Max time gap`: 8 seconds
-- Confirm results look right before scanning larger ranges.
-
-## Notes
-
-- Large scans can take time, especially with iCloud photos that need download.
-- Similarity threshold is fixed at `12.0` for consistent grouping.
-- If results are too broad or too narrow, adjust `Max time gap`.
+Then copy `dist/Amy Sort Helper.app` to `/Applications`.

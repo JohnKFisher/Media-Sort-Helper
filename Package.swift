@@ -2,16 +2,16 @@
 import PackageDescription
 
 let package = Package(
-    name: "PhotoSortHelper",
+    name: "AmySortHelper",
     platforms: [
         .macOS(.v14)
     ],
     products: [
-        .executable(name: "PhotoSortHelper", targets: ["PhotoSortHelper"])
+        .executable(name: "AmySortHelper", targets: ["AmySortHelper"])
     ],
     targets: [
         .executableTarget(
-            name: "PhotoSortHelper",
+            name: "AmySortHelper",
             resources: [
                 .process("Assets.xcassets")
             ],
