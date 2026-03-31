@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 @main
-struct AmySortHelperApp: App {
+struct MediaSortHelperApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var viewModel = ReviewViewModel()
 
@@ -73,7 +73,7 @@ struct AmySortHelperApp: App {
             .applicationVersion: AppMetadata.version,
             .version: "Build \(AppMetadata.build)",
             .credits: NSAttributedString(
-                string: "Amy Sort Helper \(AppMetadata.version)\nReview files from Current Sort and safely move reviewed items to Keep/Delete/Send and Delete on commit."
+                string: "Media Sort Helper \(AppMetadata.version)\nReview files from the selected folder and safely move reviewed items to sibling Keep/Delete/Send and Delete folders on commit."
             )
         ]
     }

@@ -6,56 +6,37 @@ import ImageIO
 import UniformTypeIdentifiers
 
 final class DiskLibraryService: @unchecked Sendable {
-    let defaultRootPath = "/Users/jkfisher/Resilio Sync/Quickswap/Amy Photos/"
-    let currentSortFolderName = "Current Sort"
     let keepFolderName = "Keep"
     let deleteFolderName = "Delete"
+    let sendAndDeleteFolderName = "Send and Delete"
 
     private let fileManager = FileManager.default
 
-    func validateRootFolder(path: String) throws -> URL {
+    func validateSourceFolder(path: String) throws -> URL {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            throw ReviewError.missingRootFolder
+            throw ReviewError.missingSourceFolder
         }
 
-        let rootURL = URL(fileURLWithPath: trimmed, isDirectory: true).standardizedFileURL
+        let sourceFolderURL = URL(fileURLWithPath: trimmed, isDirectory: true).standardizedFileURL
         var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: rootURL.path, isDirectory: &isDirectory) else {
-            throw ReviewError.rootFolderDoesNotExist
+        guard fileManager.fileExists(atPath: sourceFolderURL.path, isDirectory: &isDirectory) else {
+            throw ReviewError.sourceFolderDoesNotExist
         }
 
         guard isDirectory.boolValue else {
-            throw ReviewError.rootFolderNotDirectory
+            throw ReviewError.sourceFolderNotDirectory
         }
 
-        return rootURL
-    }
-
-    func currentSortURL(for rootFolderURL: URL) -> URL {
-        rootFolderURL.appendingPathComponent(currentSortFolderName, isDirectory: true)
-    }
-
-    func keepURL(for rootFolderURL: URL) -> URL {
-        rootFolderURL.appendingPathComponent(keepFolderName, isDirectory: true)
-    }
-
-    func deleteURL(for rootFolderURL: URL) -> URL {
-        rootFolderURL.appendingPathComponent(deleteFolderName, isDirectory: true)
-    }
-
-    func loadCurrentSortItems(rootFolderURL: URL) async throws -> DiskScanListing {
-        let sourceFolder = currentSortURL(for: rootFolderURL)
-
-        var isDirectory: ObjCBool = false
-        guard fileManager.fileExists(atPath: sourceFolder.path, isDirectory: &isDirectory) else {
-            throw ReviewError.missingCurrentSortFolder
+        let reservedFolderNames = [keepFolderName, deleteFolderName, sendAndDeleteFolderName]
+        if reservedFolderNames.contains(where: { $0.caseInsensitiveCompare(sourceFolderURL.lastPathComponent) == .orderedSame }) {
+            throw ReviewError.sourceFolderConflictsWithDestination
         }
 
-        guard isDirectory.boolValue else {
-            throw ReviewError.missingCurrentSortFolder
-        }
+        return sourceFolderURL
+    }
 
+    func loadSourceFolderItems(sourceFolderURL: URL) async throws -> DiskScanListing {
         let keys: Set<URLResourceKey> = [
             .isDirectoryKey,
             .isHiddenKey,
@@ -70,12 +51,12 @@ final class DiskLibraryService: @unchecked Sendable {
         let urls: [URL]
         do {
             urls = try fileManager.contentsOfDirectory(
-                at: sourceFolder,
+                at: sourceFolderURL,
                 includingPropertiesForKeys: Array(keys),
                 options: [.skipsPackageDescendants]
             )
         } catch {
-            throw ReviewError.unreadableCurrentSortFolder
+            throw ReviewError.unreadableSourceFolder
         }
 
         var items: [DiskItem] = []
@@ -133,7 +114,7 @@ final class DiskLibraryService: @unchecked Sendable {
         }
 
         guard !items.isEmpty else {
-            throw ReviewError.emptyCurrentSortFolder
+            throw ReviewError.emptySourceFolder
         }
 
         return DiskScanListing(

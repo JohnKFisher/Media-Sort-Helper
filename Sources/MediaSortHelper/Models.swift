@@ -84,7 +84,7 @@ struct ReviewGroup: Identifiable, Hashable, Codable, Sendable {
 }
 
 struct ScanSettings: Sendable {
-    var rootFolderURL: URL
+    var sourceFolderURL: URL
 }
 
 struct ScanProgress: Sendable {
@@ -157,28 +157,28 @@ struct CommitExecutionResult: Sendable {
 }
 
 enum ReviewError: LocalizedError, Equatable {
-    case missingRootFolder
-    case rootFolderDoesNotExist
-    case rootFolderNotDirectory
-    case missingCurrentSortFolder
-    case unreadableCurrentSortFolder
-    case emptyCurrentSortFolder
+    case missingSourceFolder
+    case sourceFolderDoesNotExist
+    case sourceFolderNotDirectory
+    case sourceFolderConflictsWithDestination
+    case unreadableSourceFolder
+    case emptySourceFolder
     case noReviewedItemsToCommit
 
     var errorDescription: String? {
         switch self {
-        case .missingRootFolder:
-            return "Choose a root folder before scanning."
-        case .rootFolderDoesNotExist:
-            return "The selected root folder does not exist."
-        case .rootFolderNotDirectory:
-            return "The selected root path is not a folder."
-        case .missingCurrentSortFolder:
-            return "The selected root is missing \"Current Sort\"."
-        case .unreadableCurrentSortFolder:
-            return "\"Current Sort\" could not be read."
-        case .emptyCurrentSortFolder:
-            return "\"Current Sort\" is empty. Add items to sort and scan again."
+        case .missingSourceFolder:
+            return "Choose a source folder before scanning."
+        case .sourceFolderDoesNotExist:
+            return "The selected source folder does not exist."
+        case .sourceFolderNotDirectory:
+            return "The selected source path is not a folder."
+        case .sourceFolderConflictsWithDestination:
+            return "Choose a source folder that is not already named Keep, Delete, or Send and Delete."
+        case .unreadableSourceFolder:
+            return "The selected source folder could not be read."
+        case .emptySourceFolder:
+            return "The selected source folder is empty. Add items to sort and scan again."
         case .noReviewedItemsToCommit:
             return "No reviewed items are ready to commit."
         }

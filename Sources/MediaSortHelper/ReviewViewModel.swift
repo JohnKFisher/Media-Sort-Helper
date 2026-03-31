@@ -4,15 +4,15 @@ import Foundation
 
 @MainActor
 final class ReviewViewModel: ObservableObject {
-    @Published var rootFolderPath: String {
+    @Published var sourceFolderPath: String {
         didSet {
-            persistRootFolderPath()
+            persistSourceFolderPath()
         }
     }
 
     @Published var isScanning = false
     @Published var scanProgress: Double = 0
-    @Published var scanStatusMessage = "Ready to scan."
+    @Published var scanStatusMessage: String
 
     @Published private(set) var scannedItemCount = 0
     @Published private(set) var skippedHiddenCount = 0
@@ -50,11 +50,14 @@ final class ReviewViewModel: ObservableObject {
 
     private let reviewSessionFileName = "review-session-v2.json"
 
-    private let rootFolderDefaultsKey = "AmySortHelper.rootFolderPath.v1"
+    private let sourceFolderDefaultsKey = "MediaSortHelper.sourceFolderPath.v1"
 
     init() {
-        rootFolderPath = UserDefaults.standard.string(forKey: rootFolderDefaultsKey)
-            ?? "/Users/jkfisher/Resilio Sync/Quickswap/Amy Photos/"
+        let persistedSourceFolderPath = UserDefaults.standard.string(forKey: sourceFolderDefaultsKey) ?? ""
+        sourceFolderPath = persistedSourceFolderPath
+        scanStatusMessage = persistedSourceFolderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? "Choose a source folder to begin."
+            : "Ready to scan the selected folder."
     }
 
     deinit {
@@ -110,28 +113,52 @@ final class ReviewViewModel: ObservableObject {
         isScanning || isCommitting || !groups.isEmpty
     }
 
-    func changeRootFolder() {
+    var hasSelectedSourceFolder: Bool {
+        !sourceFolderPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    var sourceFolderDisplayText: String {
+        hasSelectedSourceFolder ? sourceFolderPath : "No folder selected"
+    }
+
+    var sourceFolderDescription: String {
+        hasSelectedSourceFolder
+            ? "Scanning top-level files in the selected folder."
+            : "Choose any source folder to review."
+    }
+
+    var destinationFolderDescription: String {
+        guard hasSelectedSourceFolder else {
+            return "Keep, Delete, and Send and Delete folders will be created beside the selected folder."
+        }
+
+        return "Keep, Delete, and Send and Delete folders are created beside the selected folder."
+    }
+
+    func changeSourceFolder() {
         let panel = NSOpenPanel()
-        panel.title = "Choose Amy Photos Root Folder"
+        panel.title = "Choose Media Source Folder"
         panel.prompt = "Use Folder"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.allowsMultipleSelection = false
-        panel.directoryURL = URL(fileURLWithPath: rootFolderPath, isDirectory: true)
+        if let initialDirectoryURL = initialDirectoryURLForOpenPanel() {
+            panel.directoryURL = initialDirectoryURL
+        }
 
         let response = panel.runModal()
         guard response == .OK, let selectedURL = panel.url else {
             return
         }
 
-        rootFolderPath = selectedURL.standardizedFileURL.path
+        sourceFolderPath = selectedURL.standardizedFileURL.path
 
         clearCurrentSessionState()
         clearPersistedReviewSession()
         warningMessage = nil
         commitMessage = nil
         errorMessage = nil
-        scanStatusMessage = "Folder changed. Run scan to load items from Current Sort."
+        scanStatusMessage = "Folder changed. Run scan to load items from the selected folder."
     }
 
     func scan() {
@@ -139,9 +166,9 @@ final class ReviewViewModel: ObservableObject {
             return
         }
 
-        let rootFolderURL: URL
+        let sourceFolderURL: URL
         do {
-            rootFolderURL = try diskService.validateRootFolder(path: rootFolderPath)
+            sourceFolderURL = try diskService.validateSourceFolder(path: sourceFolderPath)
         } catch {
             errorMessage = error.localizedDescription
             return
@@ -158,7 +185,7 @@ final class ReviewViewModel: ObservableObject {
 
         isScanning = true
         scanProgress = 0
-        scanStatusMessage = "Loading files from Current Sort..."
+        scanStatusMessage = "Loading files from the selected folder..."
 
         scanTask?.cancel()
         scanTask = Task { [weak self] in
@@ -172,12 +199,12 @@ final class ReviewViewModel: ObservableObject {
             }
 
             do {
-                let listing = try await self.diskService.loadCurrentSortItems(rootFolderURL: rootFolderURL)
+                let listing = try await self.diskService.loadSourceFolderItems(sourceFolderURL: sourceFolderURL)
                 self.skippedHiddenCount = listing.skippedHiddenCount
                 self.skippedUnsupportedCount = listing.skippedUnsupportedCount
 
                 let settings = ScanSettings(
-                    rootFolderURL: rootFolderURL
+                    sourceFolderURL: sourceFolderURL
                 )
 
                 let scanResult = try await self.scanner.scan(items: listing.items, settings: settings) { [weak self] progress in
@@ -198,9 +225,9 @@ final class ReviewViewModel: ObservableObject {
             } catch is CancellationError {
                 self.scanStatusMessage = "Scan cancelled."
             } catch let reviewError as ReviewError {
-                if reviewError == .emptyCurrentSortFolder {
+                if reviewError == .emptySourceFolder {
                     self.warningMessage = reviewError.localizedDescription
-                    self.scanStatusMessage = "Current Sort is empty."
+                    self.scanStatusMessage = "The selected folder is empty."
                 } else {
                     self.errorMessage = reviewError.localizedDescription
                     self.scanStatusMessage = "Scan failed."
@@ -562,9 +589,9 @@ final class ReviewViewModel: ObservableObject {
             return
         }
 
-        let rootFolderURL: URL
+        let sourceFolderURL: URL
         do {
-            rootFolderURL = try diskService.validateRootFolder(path: rootFolderPath)
+            sourceFolderURL = try diskService.validateSourceFolder(path: sourceFolderPath)
         } catch {
             errorMessage = error.localizedDescription
             return
@@ -587,7 +614,7 @@ final class ReviewViewModel: ObservableObject {
 
             do {
                 let result = try await Task.detached(priority: .userInitiated) {
-                    try commitService.execute(plan: plan, rootFolderURL: rootFolderURL)
+                    try commitService.execute(plan: plan, sourceFolderURL: sourceFolderURL)
                 }.value
 
                 self.applyCommitResult(result)
@@ -714,8 +741,30 @@ final class ReviewViewModel: ObservableObject {
         mouseLocationAtKeyboardNavigation = NSEvent.mouseLocation
     }
 
-    private func persistRootFolderPath() {
-        UserDefaults.standard.set(rootFolderPath, forKey: rootFolderDefaultsKey)
+    private func persistSourceFolderPath() {
+        let trimmedPath = sourceFolderPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmedPath.isEmpty {
+            UserDefaults.standard.removeObject(forKey: sourceFolderDefaultsKey)
+        } else {
+            UserDefaults.standard.set(trimmedPath, forKey: sourceFolderDefaultsKey)
+        }
+    }
+
+    private func initialDirectoryURLForOpenPanel() -> URL? {
+        let trimmedPath = sourceFolderPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else {
+            return nil
+        }
+
+        let candidateURL = URL(fileURLWithPath: trimmedPath, isDirectory: true).standardizedFileURL
+        var isDirectory = ObjCBool(false)
+        guard FileManager.default.fileExists(atPath: candidateURL.path, isDirectory: &isDirectory),
+              isDirectory.boolValue
+        else {
+            return nil
+        }
+
+        return candidateURL
     }
 
     private var persistedReviewSessionURL: URL {
@@ -724,7 +773,7 @@ final class ReviewViewModel: ObservableObject {
             in: .userDomainMask
         ).first ?? FileManager.default.temporaryDirectory
 
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.jkfisher.amysorthelper"
+        let bundleID = Bundle.main.bundleIdentifier ?? "io.github.johnkfisher.mediasorthelper"
         return appSupportURL
             .appendingPathComponent(bundleID, isDirectory: true)
             .appendingPathComponent(reviewSessionFileName, isDirectory: false)

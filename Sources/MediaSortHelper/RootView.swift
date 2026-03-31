@@ -51,7 +51,7 @@ struct RootView: View {
                     .font(.caption.weight(.semibold))
                     .foregroundStyle(sidebarSecondaryTextColor)
 
-                Text("Review files from Current Sort and move reviewed items to Keep, Delete, or Send and Delete when you commit.")
+                Text("Review files from the selected folder and move reviewed items to Keep, Delete, or Send and Delete when you commit.")
                     .font(.subheadline)
                     .foregroundStyle(sidebarSecondaryTextColor)
 
@@ -78,26 +78,42 @@ struct RootView: View {
             Text("Folder")
                 .font(.headline)
 
-            Text("Root folder")
+            Text("Source folder")
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(sidebarSecondaryTextColor)
 
-            Text(viewModel.rootFolderPath)
-                .font(.caption.monospaced())
-                .textSelection(.enabled)
-                .padding(10)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.primary.opacity(0.06))
-                )
+            if viewModel.hasSelectedSourceFolder {
+                Text(viewModel.sourceFolderDisplayText)
+                    .font(.caption.monospaced())
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.primary.opacity(0.06))
+                    )
+                    .textSelection(.enabled)
+            } else {
+                Text(viewModel.sourceFolderDisplayText)
+                    .font(.caption.monospaced())
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color.primary.opacity(0.06))
+                    )
+                    .textSelection(.disabled)
+            }
 
-            Text("Current Sort path: \(viewModel.rootFolderPath)/Current Sort")
+            Text(viewModel.sourceFolderDescription)
                 .font(.caption)
                 .foregroundStyle(sidebarSecondaryTextColor)
 
-            Button("Change Folder...") {
-                viewModel.changeRootFolder()
+            Text(viewModel.destinationFolderDescription)
+                .font(.caption)
+                .foregroundStyle(sidebarSecondaryTextColor)
+
+            Button(viewModel.hasSelectedSourceFolder ? "Change Folder..." : "Choose Folder...") {
+                viewModel.changeSourceFolder()
             }
             .buttonStyle(.bordered)
         }
@@ -111,11 +127,11 @@ struct RootView: View {
             Button {
                 viewModel.scan()
             } label: {
-                Label(viewModel.isScanning ? "Scanning..." : "Scan Current Sort", systemImage: "magnifyingglass")
+                Label(viewModel.isScanning ? "Scanning..." : "Scan Folder", systemImage: "magnifyingglass")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(viewModel.isScanning)
+            .disabled(viewModel.isScanning || !viewModel.hasSelectedSourceFolder)
 
             if viewModel.isScanning {
                 Button(role: .destructive) {
@@ -177,7 +193,7 @@ struct RootView: View {
                 ContentUnavailableView(
                     "No Files Loaded",
                     systemImage: "folder",
-                    description: Text("Choose a root folder and scan Current Sort.")
+                    description: Text("Choose any source folder, then scan to load its top-level files.")
                 )
             }
         }
@@ -556,7 +572,7 @@ private struct ReviewGroupView: View {
             }
 
             Toggle(
-                "I understand this moves reviewed files from Current Sort into Keep/Delete/Send and Delete.",
+                "I understand this moves reviewed files from the selected folder into sibling Keep/Delete/Send and Delete folders.",
                 isOn: $viewModel.commitArmed
             )
             .toggleStyle(.checkbox)

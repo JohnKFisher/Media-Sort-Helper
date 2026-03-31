@@ -7,6 +7,8 @@ DerivedData/
 .swiftpm/xcode/package.xcworkspace/contents.xcworkspacedata
 .netrc
 /dist
+/output
+/tmp
 *.xcarchive
 *.dSYM
 .env

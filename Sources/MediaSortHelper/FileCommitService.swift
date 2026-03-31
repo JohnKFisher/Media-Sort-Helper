@@ -71,14 +71,15 @@ final class FileCommitService: @unchecked Sendable {
         )
     }
 
-    func execute(plan: CommitPlan, rootFolderURL: URL) throws -> CommitExecutionResult {
+    func execute(plan: CommitPlan, sourceFolderURL: URL) throws -> CommitExecutionResult {
         if plan.operations.isEmpty {
             throw ReviewError.noReviewedItemsToCommit
         }
 
-        let keepFolderURL = rootFolderURL.appendingPathComponent(CommitDestination.keep.folderName, isDirectory: true)
-        let deleteFolderURL = rootFolderURL.appendingPathComponent(CommitDestination.delete.folderName, isDirectory: true)
-        let sendAndDeleteFolderURL = rootFolderURL.appendingPathComponent(CommitDestination.sendAndDelete.folderName, isDirectory: true)
+        let destinationRootURL = sourceFolderURL.deletingLastPathComponent()
+        let keepFolderURL = destinationRootURL.appendingPathComponent(CommitDestination.keep.folderName, isDirectory: true)
+        let deleteFolderURL = destinationRootURL.appendingPathComponent(CommitDestination.delete.folderName, isDirectory: true)
+        let sendAndDeleteFolderURL = destinationRootURL.appendingPathComponent(CommitDestination.sendAndDelete.folderName, isDirectory: true)
 
         try fileManager.createDirectory(at: keepFolderURL, withIntermediateDirectories: true, attributes: nil)
         try fileManager.createDirectory(at: deleteFolderURL, withIntermediateDirectories: true, attributes: nil)

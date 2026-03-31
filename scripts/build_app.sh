@@ -4,7 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT_DIR"
 
-APP_NAME="Amy Sort Helper.app"
+APP_NAME="Media Sort Helper.app"
 APP_DIR="$ROOT_DIR/dist/$APP_NAME"
 INFO_PLIST_PATH="$ROOT_DIR/Resources/Info.plist"
 VERSION_STATE_DIR="$ROOT_DIR/.build"
@@ -57,10 +57,10 @@ echo "Building release binary..."
 swift build -c release >/dev/null
 
 BUILD_BIN_DIR="$(swift build -c release --show-bin-path)"
-EXECUTABLE_PATH="$BUILD_BIN_DIR/AmySortHelper"
-RESOURCE_BUNDLE_PATH="$BUILD_BIN_DIR/AmySortHelper_AmySortHelper.bundle"
-ICONSET_SOURCE_DIR="$ROOT_DIR/Sources/AmySortHelper/Assets.xcassets/AppIcon.appiconset"
-ICONSET_TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/amysort-icon.XXXXXX")"
+EXECUTABLE_PATH="$BUILD_BIN_DIR/MediaSortHelper"
+RESOURCE_BUNDLE_PATH="$BUILD_BIN_DIR/MediaSortHelper_MediaSortHelper.bundle"
+ICONSET_SOURCE_DIR="$ROOT_DIR/Sources/MediaSortHelper/Assets.xcassets/AppIcon.appiconset"
+ICONSET_TMP_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/mediasort-icon.XXXXXX")"
 ICONSET_TMP_DIR="$ICONSET_TMP_ROOT/AppIcon.iconset"
 
 cleanup() {
@@ -87,10 +87,10 @@ echo "Creating app bundle at: $APP_DIR"
 rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/Contents/MacOS" "$APP_DIR/Contents/Resources"
 
-cp "$EXECUTABLE_PATH" "$APP_DIR/Contents/MacOS/AmySortHelper"
+cp "$EXECUTABLE_PATH" "$APP_DIR/Contents/MacOS/MediaSortHelper"
 cp Resources/Info.plist "$APP_DIR/Contents/Info.plist"
 cp -R "$RESOURCE_BUNDLE_PATH" "$APP_DIR/Contents/Resources/"
-chmod +x "$APP_DIR/Contents/MacOS/AmySortHelper"
+chmod +x "$APP_DIR/Contents/MacOS/MediaSortHelper"
 
 echo "Generating AppIcon.icns..."
 mkdir -p "$ICONSET_TMP_DIR"

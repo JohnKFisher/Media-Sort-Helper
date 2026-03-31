@@ -1,7 +1,7 @@
 import Foundation
 
 enum AppMetadata {
-    static let displayName = "Amy Sort Helper"
+    static let displayName = "Media Sort Helper"
 
     static var version: String {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
