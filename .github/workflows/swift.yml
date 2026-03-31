@@ -9,13 +9,19 @@ on:
   pull_request:
     branches: [ "main" ]
 
+permissions:
+  contents: read
+
 jobs:
   build:
-
     runs-on: macos-latest
 
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
+    - name: Show toolchain
+      run: |
+        swift --version
+        xcode-select -p
     - name: Build
       run: swift build -v
     - name: Run tests
