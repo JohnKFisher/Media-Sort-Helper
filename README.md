@@ -2,6 +2,10 @@
 
 Media Sort Helper is a safety-first macOS app for reviewing image and video files from any selected folder, then moving reviewed items into opinionated destination folders.
 
+## What This Is
+
+This is a largely vibe-coded personal hobby app built for my own use. It does what I wanted it to do. If it also happens to be useful to you, great, but no warranties, support promises, stability guarantees, or long-term commitments are implied.
+
 ## Folder Workflow
 
 Choose any source folder to review. The app scans only that folder's top-level files.
@@ -61,4 +65,18 @@ cd /path/to/MediaSortHelper
 ./scripts/build_app.sh
 ```
 
-The script creates `dist/Media Sort Helper.app`, which you can then move to `/Applications` if you want.
+The script creates `dist/Media Sort Helper.app` as a universal macOS app bundle with both `arm64` and `x86_64` slices, so it can run on Apple Silicon and Intel Macs that meet the app's minimum macOS version.
+
+If you need a custom build matrix, set `MEDIA_SORT_HELPER_TARGET_TRIPLES` to a space-separated list of Swift target triples before running the script.
+
+## Notarization And Gatekeeper
+
+This app is not notarized. macOS may warn or block it when you try to open it, especially if you downloaded a built `.app` from someone else.
+
+If Gatekeeper blocks it, use the normal macOS override flow:
+
+1. In Finder, Control-click the app and choose **Open**.
+2. Click **Open** in the confirmation dialog if macOS offers it.
+3. If macOS still blocks it, go to **System Settings > Privacy & Security** and use **Open Anyway** for the blocked app, then try again.
+
+The app is intended for people who are comfortable running an unnotarized personal project build.
