@@ -24,6 +24,10 @@ let package = Package(
                     "-Xlinker", "Resources/Info.plist"
                 ])
             ]
+        ),
+        .testTarget(
+            name: "MediaSortHelperTests",
+            dependencies: ["MediaSortHelper"]
         )
     ]
 )

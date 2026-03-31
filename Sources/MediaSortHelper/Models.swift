@@ -127,6 +127,24 @@ struct CommitOperation: Sendable {
     var destination: CommitDestination
 }
 
+struct CommitDestinationPaths: Sendable, Hashable {
+    var destinationRootURL: URL
+    var keepURL: URL
+    var deleteURL: URL
+    var sendAndDeleteURL: URL
+
+    func url(for destination: CommitDestination) -> URL {
+        switch destination {
+        case .keep:
+            return keepURL
+        case .delete:
+            return deleteURL
+        case .sendAndDelete:
+            return sendAndDeleteURL
+        }
+    }
+}
+
 struct CommitPlan: Sendable {
     var operations: [CommitOperation]
     var reviewedCount: Int
@@ -140,19 +158,116 @@ struct CommitPlan: Sendable {
     var totalMoveCount: Int {
         operations.count
     }
+
+    func count(for destination: CommitDestination) -> Int {
+        switch destination {
+        case .keep:
+            return keepCount
+        case .delete:
+            return deleteCount
+        case .sendAndDelete:
+            return sendAndDeleteCount
+        }
+    }
+
+    func samples(for destination: CommitDestination) -> [String] {
+        switch destination {
+        case .keep:
+            return keepSamples
+        case .delete:
+            return deleteSamples
+        case .sendAndDelete:
+            return sendAndDeleteSamples
+        }
+    }
+}
+
+struct CommitExecutionProgress: Sendable {
+    var processedCount: Int
+    var movedCount: Int
+    var totalCount: Int
+    var currentFileName: String?
+    var lastProcessedFileName: String?
+    var statusMessage: String
+
+    var fractionCompleted: Double {
+        guard totalCount > 0 else {
+            return 0
+        }
+
+        return min(max(Double(processedCount) / Double(totalCount), 0), 1)
+    }
+}
+
+struct CommitSkippedSourceDetail: Identifiable, Hashable, Sendable {
+    var sourceFileName: String
+    var sourcePath: String
+    var destination: CommitDestination
+    var destinationFolderPath: String
+
+    var id: String {
+        "\(sourcePath)|\(destination.rawValue)|missing"
+    }
+}
+
+struct CommitRenamedItem: Identifiable, Hashable, Sendable {
+    var sourceFileName: String
+    var finalFileName: String
+    var destination: CommitDestination
+    var destinationPath: String
+
+    var id: String {
+        destinationPath
+    }
+}
+
+struct CommitFailureDetail: Identifiable, Hashable, Sendable {
+    var sourceFileName: String
+    var sourcePath: String
+    var destination: CommitDestination
+    var destinationFolderPath: String
+    var message: String
+
+    var id: String {
+        "\(sourcePath)|\(destination.rawValue)|failure|\(message)"
+    }
 }
 
 struct CommitExecutionResult: Sendable {
+    var destinationPaths: CommitDestinationPaths
+    var totalOperationCount: Int
+    var processedCount: Int
+    var wasCancelled: Bool
     var movedItemIDs: Set<String>
     var movedToKeepCount: Int
     var movedToDeleteCount: Int
     var movedToSendAndDeleteCount: Int
-    var skippedMissingSourceCount: Int
-    var renamedCount: Int
-    var failureMessages: [String]
+    var skippedMissingSources: [CommitSkippedSourceDetail]
+    var renamedItems: [CommitRenamedItem]
+    var failures: [CommitFailureDetail]
 
     var totalMovedCount: Int {
         movedItemIDs.count
+    }
+
+    var skippedMissingSourceCount: Int {
+        skippedMissingSources.count
+    }
+
+    var renamedCount: Int {
+        renamedItems.count
+    }
+
+    var failureCount: Int {
+        failures.count
+    }
+
+    var remainingCount: Int {
+        max(totalOperationCount - processedCount, 0)
+    }
+
+    var hasIssues: Bool {
+        skippedMissingSourceCount > 0 || failureCount > 0 || wasCancelled
     }
 }
 

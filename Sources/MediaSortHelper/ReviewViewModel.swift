@@ -27,13 +27,17 @@ final class ReviewViewModel: ObservableObject {
 
     @Published var commitArmed = false
     @Published var isCommitting = false
+    @Published var showCommitPreview = false
     @Published var showLargeCommitConfirmation = false
+    @Published var showCommitResults = false
 
     @Published var warningMessage: String?
     @Published var commitMessage: String?
     @Published var errorMessage: String?
 
     @Published private(set) var commitPlan: CommitPlan?
+    @Published private(set) var commitProgress: CommitExecutionProgress?
+    @Published private(set) var lastCommitResult: CommitExecutionResult?
 
     private let diskService = DiskLibraryService()
     private let commitService = FileCommitService()
@@ -44,6 +48,7 @@ final class ReviewViewModel: ObservableObject {
     private var thumbnailKeysByItemID: [String: Set<String>] = [:]
 
     private var scanTask: Task<Void, Never>?
+    private var commitTask: Task<CommitExecutionResult, Error>?
 
     private var ignoreHoverUntilMouseMoves = false
     private var mouseLocationAtKeyboardNavigation: CGPoint = .zero
@@ -62,6 +67,7 @@ final class ReviewViewModel: ObservableObject {
 
     deinit {
         scanTask?.cancel()
+        commitTask?.cancel()
     }
 
     func bootstrap() async {
@@ -121,6 +127,14 @@ final class ReviewViewModel: ObservableObject {
         hasSelectedSourceFolder ? sourceFolderPath : "No folder selected"
     }
 
+    var destinationRootDisplayText: String {
+        guard let destinationPaths else {
+            return "Choose a source folder to determine destination paths."
+        }
+
+        return destinationPaths.destinationRootURL.path
+    }
+
     var sourceFolderDescription: String {
         hasSelectedSourceFolder
             ? "Scanning top-level files in the selected folder."
@@ -133,6 +147,63 @@ final class ReviewViewModel: ObservableObject {
         }
 
         return "Keep, Delete, and Send and Delete folders are created beside the selected folder."
+    }
+
+    var commitProgressSummary: String {
+        guard let commitProgress else {
+            return ""
+        }
+
+        return "Moved \(commitProgress.movedCount) of \(commitProgress.totalCount)  •  Processed \(commitProgress.processedCount) of \(commitProgress.totalCount)"
+    }
+
+    var commitResultsTitle: String {
+        guard let result = lastCommitResult else {
+            return "Commit Results"
+        }
+
+        if result.wasCancelled {
+            return "Commit Cancelled"
+        }
+
+        if result.hasIssues {
+            return "Commit Finished With Issues"
+        }
+
+        return "Commit Complete"
+    }
+
+    var latestCommitSummary: String? {
+        guard let result = lastCommitResult else {
+            return nil
+        }
+
+        if result.wasCancelled {
+            return "Cancelled after processing \(result.processedCount) of \(result.totalOperationCount) file(s)."
+        }
+
+        if result.hasIssues {
+            return "Processed \(result.processedCount) file(s) with issues. Review results for details."
+        }
+
+        return "Moved \(result.totalMovedCount) file(s) successfully."
+    }
+
+    private var standardizedSourceFolderURL: URL? {
+        let trimmedPath = sourceFolderPath.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPath.isEmpty else {
+            return nil
+        }
+
+        return URL(fileURLWithPath: trimmedPath, isDirectory: true).standardizedFileURL
+    }
+
+    var destinationPaths: CommitDestinationPaths? {
+        guard let standardizedSourceFolderURL else {
+            return nil
+        }
+
+        return commitService.destinationPaths(for: standardizedSourceFolderURL)
     }
 
     func changeSourceFolder() {
@@ -155,6 +226,8 @@ final class ReviewViewModel: ObservableObject {
 
         clearCurrentSessionState()
         clearPersistedReviewSession()
+        lastCommitResult = nil
+        showCommitResults = false
         warningMessage = nil
         commitMessage = nil
         errorMessage = nil
@@ -162,7 +235,7 @@ final class ReviewViewModel: ObservableObject {
     }
 
     func scan() {
-        guard !isScanning else {
+        guard !isScanning, !isCommitting else {
             return
         }
 
@@ -178,6 +251,7 @@ final class ReviewViewModel: ObservableObject {
         warningMessage = nil
         commitMessage = nil
         commitArmed = false
+        showCommitPreview = false
         showLargeCommitConfirmation = false
 
         clearCurrentSessionState()
@@ -566,6 +640,22 @@ final class ReviewViewModel: ObservableObject {
             return
         }
 
+        showCommitPreview = true
+    }
+
+    func confirmLargeCommitAndCommit() {
+        showLargeCommitConfirmation = false
+        commitReviewedItems()
+    }
+
+    func confirmCommitPreview() {
+        showCommitPreview = false
+
+        guard let plan = commitPlan, plan.totalMoveCount > 0 else {
+            warningMessage = ReviewError.noReviewedItemsToCommit.localizedDescription
+            return
+        }
+
         if plan.totalMoveCount > 200 {
             showLargeCommitConfirmation = true
             return
@@ -574,9 +664,27 @@ final class ReviewViewModel: ObservableObject {
         commitReviewedItems()
     }
 
-    func confirmLargeCommitAndCommit() {
-        showLargeCommitConfirmation = false
-        commitReviewedItems()
+    func dismissCommitResults() {
+        showCommitResults = false
+    }
+
+    func cancelCommit() {
+        guard isCommitting else {
+            return
+        }
+
+        commitTask?.cancel()
+
+        if let commitProgress {
+            self.commitProgress = CommitExecutionProgress(
+                processedCount: commitProgress.processedCount,
+                movedCount: commitProgress.movedCount,
+                totalCount: commitProgress.totalCount,
+                currentFileName: commitProgress.currentFileName,
+                lastProcessedFileName: commitProgress.lastProcessedFileName,
+                statusMessage: "Stopping after the current file..."
+            )
+        }
     }
 
     private func commitReviewedItems() {
@@ -598,11 +706,31 @@ final class ReviewViewModel: ObservableObject {
         }
 
         isCommitting = true
+        showCommitPreview = false
+        showCommitResults = false
         commitMessage = nil
         errorMessage = nil
         warningMessage = nil
+        lastCommitResult = nil
+        commitProgress = CommitExecutionProgress(
+            processedCount: 0,
+            movedCount: 0,
+            totalCount: plan.totalMoveCount,
+            currentFileName: nil,
+            lastProcessedFileName: nil,
+            statusMessage: "Preparing commit..."
+        )
 
         let commitService = self.commitService
+        let task = Task.detached(priority: .userInitiated) { [commitService, plan, sourceFolderURL] in
+            try await commitService.execute(plan: plan, sourceFolderURL: sourceFolderURL) { progress in
+                await MainActor.run {
+                    self.commitProgress = progress
+                }
+            }
+        }
+        commitTask = task
+
         Task { [weak self] in
             guard let self else {
                 return
@@ -610,12 +738,12 @@ final class ReviewViewModel: ObservableObject {
 
             defer {
                 self.isCommitting = false
+                self.commitTask = nil
+                self.commitProgress = nil
             }
 
             do {
-                let result = try await Task.detached(priority: .userInitiated) {
-                    try commitService.execute(plan: plan, sourceFolderURL: sourceFolderURL)
-                }.value
+                let result = try await task.value
 
                 self.applyCommitResult(result)
             } catch {
@@ -625,29 +753,13 @@ final class ReviewViewModel: ObservableObject {
     }
 
     private func applyCommitResult(_ result: CommitExecutionResult) {
-        guard !result.movedItemIDs.isEmpty else {
-            warningMessage = "No files were moved."
-            commitArmed = false
-            rebuildCommitPlan()
-            return
-        }
-
-        let movedSummary = "Moved \(result.totalMovedCount) file(s): Keep \(result.movedToKeepCount), Delete \(result.movedToDeleteCount), Send and Delete \(result.movedToSendAndDeleteCount)."
-        var details: [String] = [movedSummary]
-        if result.renamedCount > 0 {
-            details.append("Auto-renamed on conflicts: \(result.renamedCount)")
-        }
-        if result.skippedMissingSourceCount > 0 {
-            details.append("Missing at commit time: \(result.skippedMissingSourceCount)")
-        }
-        if !result.failureMessages.isEmpty {
-            details.append("Failures: \(result.failureMessages.count)")
-            warningMessage = result.failureMessages.prefix(3).joined(separator: "  •  ")
-        }
-
-        commitMessage = details.joined(separator: "  •  ")
+        lastCommitResult = result
+        showCommitResults = true
         commitArmed = false
+        showCommitPreview = false
         showLargeCommitConfirmation = false
+        warningMessage = nil
+        commitMessage = latestCommitSummary
 
         // Reload from disk after commit so the review view always reflects the actual folder state.
         scan()
@@ -695,9 +807,28 @@ final class ReviewViewModel: ObservableObject {
         skippedUnsupportedCount = 0
         commitPlan = nil
         commitArmed = false
+        showCommitPreview = false
 
         thumbnailCache.removeAllObjects()
         thumbnailKeysByItemID = [:]
+    }
+
+    func destinationPath(for destination: CommitDestination) -> String {
+        destinationPaths?.url(for: destination).path ?? "Unavailable"
+    }
+
+    func commitCount(for destination: CommitDestination) -> Int {
+        commitPlan?.count(for: destination) ?? 0
+    }
+
+    func commitSamples(for destination: CommitDestination) -> [String] {
+        commitPlan?.samples(for: destination) ?? []
+    }
+
+    func remainingSampleCount(for destination: CommitDestination) -> Int {
+        let count = commitCount(for: destination)
+        let sampleCount = commitSamples(for: destination).count
+        return max(count - sampleCount, 0)
     }
 
     private func rebuildCommitPlan() {

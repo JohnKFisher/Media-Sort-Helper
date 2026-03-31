@@ -3,6 +3,16 @@ import Foundation
 final class FileCommitService: @unchecked Sendable {
     private let fileManager = FileManager.default
 
+    func destinationPaths(for sourceFolderURL: URL) -> CommitDestinationPaths {
+        let destinationRootURL = sourceFolderURL.deletingLastPathComponent()
+        return CommitDestinationPaths(
+            destinationRootURL: destinationRootURL,
+            keepURL: destinationRootURL.appendingPathComponent(CommitDestination.keep.folderName, isDirectory: true),
+            deleteURL: destinationRootURL.appendingPathComponent(CommitDestination.delete.folderName, isDirectory: true),
+            sendAndDeleteURL: destinationRootURL.appendingPathComponent(CommitDestination.sendAndDelete.folderName, isDirectory: true)
+        )
+    }
+
     func buildCommitPlan(
         itemLookup: [String: DiskItem],
         decisions: [String: FileDecision],
@@ -71,53 +81,103 @@ final class FileCommitService: @unchecked Sendable {
         )
     }
 
-    func execute(plan: CommitPlan, sourceFolderURL: URL) throws -> CommitExecutionResult {
+    func execute(
+        plan: CommitPlan,
+        sourceFolderURL: URL,
+        progress: @escaping @Sendable (CommitExecutionProgress) async -> Void = { _ in }
+    ) async throws -> CommitExecutionResult {
         if plan.operations.isEmpty {
             throw ReviewError.noReviewedItemsToCommit
         }
 
-        let destinationRootURL = sourceFolderURL.deletingLastPathComponent()
-        let keepFolderURL = destinationRootURL.appendingPathComponent(CommitDestination.keep.folderName, isDirectory: true)
-        let deleteFolderURL = destinationRootURL.appendingPathComponent(CommitDestination.delete.folderName, isDirectory: true)
-        let sendAndDeleteFolderURL = destinationRootURL.appendingPathComponent(CommitDestination.sendAndDelete.folderName, isDirectory: true)
+        let destinationPaths = destinationPaths(for: sourceFolderURL)
 
-        try fileManager.createDirectory(at: keepFolderURL, withIntermediateDirectories: true, attributes: nil)
-        try fileManager.createDirectory(at: deleteFolderURL, withIntermediateDirectories: true, attributes: nil)
-        try fileManager.createDirectory(at: sendAndDeleteFolderURL, withIntermediateDirectories: true, attributes: nil)
+        try fileManager.createDirectory(at: destinationPaths.keepURL, withIntermediateDirectories: true, attributes: nil)
+        try fileManager.createDirectory(at: destinationPaths.deleteURL, withIntermediateDirectories: true, attributes: nil)
+        try fileManager.createDirectory(at: destinationPaths.sendAndDeleteURL, withIntermediateDirectories: true, attributes: nil)
 
         var movedItemIDs: Set<String> = []
         var movedToKeepCount = 0
         var movedToDeleteCount = 0
         var movedToSendAndDeleteCount = 0
-        var skippedMissingSourceCount = 0
-        var renamedCount = 0
-        var failureMessages: [String] = []
+        var skippedMissingSources: [CommitSkippedSourceDetail] = []
+        var renamedItems: [CommitRenamedItem] = []
+        var failures: [CommitFailureDetail] = []
+        var processedCount = 0
+        var wasCancelled = false
+        var lastProcessedFileName: String?
+
+        await progress(
+            CommitExecutionProgress(
+                processedCount: processedCount,
+                movedCount: movedItemIDs.count,
+                totalCount: plan.totalMoveCount,
+                currentFileName: nil,
+                lastProcessedFileName: nil,
+                statusMessage: "Prepared destination folders."
+            )
+        )
 
         for operation in plan.operations {
+            if Task.isCancelled {
+                wasCancelled = true
+                break
+            }
+
+            let currentFileName = operation.sourceURL.lastPathComponent
+            await progress(
+                CommitExecutionProgress(
+                    processedCount: processedCount,
+                    movedCount: movedItemIDs.count,
+                    totalCount: plan.totalMoveCount,
+                    currentFileName: currentFileName,
+                    lastProcessedFileName: lastProcessedFileName,
+                    statusMessage: "Moving \(currentFileName)..."
+                )
+            )
+
             guard fileManager.fileExists(atPath: operation.sourceURL.path) else {
-                skippedMissingSourceCount += 1
+                skippedMissingSources.append(
+                    CommitSkippedSourceDetail(
+                        sourceFileName: currentFileName,
+                        sourcePath: operation.sourceURL.path,
+                        destination: operation.destination,
+                        destinationFolderPath: destinationPaths.url(for: operation.destination).path
+                    )
+                )
+                processedCount += 1
+                lastProcessedFileName = currentFileName
+
+                await progress(
+                    CommitExecutionProgress(
+                        processedCount: processedCount,
+                        movedCount: movedItemIDs.count,
+                        totalCount: plan.totalMoveCount,
+                        currentFileName: nil,
+                        lastProcessedFileName: lastProcessedFileName,
+                        statusMessage: "Skipped missing source: \(currentFileName)"
+                    )
+                )
                 continue
             }
 
-            let destinationFolder: URL = {
-                switch operation.destination {
-                case .keep:
-                    return keepFolderURL
-                case .delete:
-                    return deleteFolderURL
-                case .sendAndDelete:
-                    return sendAndDeleteFolderURL
-                }
-            }()
+            let destinationFolder = destinationPaths.url(for: operation.destination)
 
             do {
                 let resolvedDestinationURL = uniqueDestinationURL(
                     in: destinationFolder,
-                    preferredFileName: operation.sourceURL.lastPathComponent
+                    preferredFileName: currentFileName
                 )
 
-                if resolvedDestinationURL.lastPathComponent != operation.sourceURL.lastPathComponent {
-                    renamedCount += 1
+                if resolvedDestinationURL.lastPathComponent != currentFileName {
+                    renamedItems.append(
+                        CommitRenamedItem(
+                            sourceFileName: currentFileName,
+                            finalFileName: resolvedDestinationURL.lastPathComponent,
+                            destination: operation.destination,
+                            destinationPath: resolvedDestinationURL.path
+                        )
+                    )
                 }
 
                 try fileManager.moveItem(at: operation.sourceURL, to: resolvedDestinationURL)
@@ -132,18 +192,70 @@ final class FileCommitService: @unchecked Sendable {
                     movedToSendAndDeleteCount += 1
                 }
             } catch {
-                failureMessages.append("\(operation.sourceURL.lastPathComponent): \(error.localizedDescription)")
+                failures.append(
+                    CommitFailureDetail(
+                        sourceFileName: currentFileName,
+                        sourcePath: operation.sourceURL.path,
+                        destination: operation.destination,
+                        destinationFolderPath: destinationFolder.path,
+                        message: error.localizedDescription
+                    )
+                )
             }
+
+            processedCount += 1
+            lastProcessedFileName = currentFileName
+
+            await progress(
+                CommitExecutionProgress(
+                    processedCount: processedCount,
+                    movedCount: movedItemIDs.count,
+                    totalCount: plan.totalMoveCount,
+                    currentFileName: nil,
+                    lastProcessedFileName: lastProcessedFileName,
+                    statusMessage: "Processed \(processedCount) of \(plan.totalMoveCount) files."
+                )
+            )
+
+            await Task.yield()
+        }
+
+        if wasCancelled {
+            await progress(
+                CommitExecutionProgress(
+                    processedCount: processedCount,
+                    movedCount: movedItemIDs.count,
+                    totalCount: plan.totalMoveCount,
+                    currentFileName: nil,
+                    lastProcessedFileName: lastProcessedFileName,
+                    statusMessage: "Commit cancelled. Already moved files remain moved."
+                )
+            )
+        } else {
+            await progress(
+                CommitExecutionProgress(
+                    processedCount: processedCount,
+                    movedCount: movedItemIDs.count,
+                    totalCount: plan.totalMoveCount,
+                    currentFileName: nil,
+                    lastProcessedFileName: lastProcessedFileName,
+                    statusMessage: "Commit finished."
+                )
+            )
         }
 
         return CommitExecutionResult(
+            destinationPaths: destinationPaths,
+            totalOperationCount: plan.totalMoveCount,
+            processedCount: processedCount,
+            wasCancelled: wasCancelled,
             movedItemIDs: movedItemIDs,
             movedToKeepCount: movedToKeepCount,
             movedToDeleteCount: movedToDeleteCount,
             movedToSendAndDeleteCount: movedToSendAndDeleteCount,
-            skippedMissingSourceCount: skippedMissingSourceCount,
-            renamedCount: renamedCount,
-            failureMessages: failureMessages
+            skippedMissingSources: skippedMissingSources,
+            renamedItems: renamedItems,
+            failures: failures
         )
     }
 

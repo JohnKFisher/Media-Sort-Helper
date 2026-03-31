@@ -39,6 +39,26 @@ struct RootView: View {
         } message: {
             Text("This commit will move more than 200 files. Continue?")
         }
+        .sheet(isPresented: Binding(
+            get: { viewModel.showCommitPreview },
+            set: { viewModel.showCommitPreview = $0 }
+        )) {
+            CommitPreviewSheet()
+                .environmentObject(viewModel)
+        }
+        .sheet(isPresented: Binding(
+            get: { viewModel.showCommitResults },
+            set: { newValue in
+                if !newValue {
+                    viewModel.dismissCommitResults()
+                } else {
+                    viewModel.showCommitResults = true
+                }
+            }
+        )) {
+            CommitResultsSheet()
+                .environmentObject(viewModel)
+        }
     }
 
     private var controlsPane: some View {
@@ -112,10 +132,41 @@ struct RootView: View {
                 .font(.caption)
                 .foregroundStyle(sidebarSecondaryTextColor)
 
+            Text("Destination root")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(sidebarSecondaryTextColor)
+
+            Text(viewModel.destinationRootDisplayText)
+                .font(.caption.monospaced())
+                .padding(10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.06))
+                )
+                .textSelection(.enabled)
+
+            destinationPathRow(title: "Keep", destination: .keep)
+            destinationPathRow(title: "Delete", destination: .delete)
+            destinationPathRow(title: "Send/Delete", destination: .sendAndDelete)
+
             Button(viewModel.hasSelectedSourceFolder ? "Change Folder..." : "Choose Folder...") {
                 viewModel.changeSourceFolder()
             }
             .buttonStyle(.bordered)
+        }
+    }
+
+    private func destinationPathRow(title: String, destination: CommitDestination) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(sidebarSecondaryTextColor)
+
+            Text(viewModel.destinationPath(for: destination))
+                .font(.caption.monospaced())
+                .foregroundStyle(sidebarSecondaryTextColor)
+                .textSelection(.enabled)
         }
     }
 
@@ -131,7 +182,7 @@ struct RootView: View {
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
-            .disabled(viewModel.isScanning || !viewModel.hasSelectedSourceFolder)
+            .disabled(viewModel.isScanning || viewModel.isCommitting || !viewModel.hasSelectedSourceFolder)
 
             if viewModel.isScanning {
                 Button(role: .destructive) {
@@ -177,7 +228,7 @@ struct RootView: View {
                     .foregroundStyle(.orange)
             }
 
-            if let message = viewModel.commitMessage {
+            if let message = viewModel.latestCommitSummary {
                 Label(message, systemImage: "checkmark.circle.fill")
                     .font(.caption)
                     .foregroundStyle(.green)
@@ -556,19 +607,46 @@ private struct ReviewGroupView: View {
 
     private var commitSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Spacer()
-                Button {
-                    viewModel.requestCommit()
-                } label: {
-                    if viewModel.isCommitting {
-                        ProgressView()
-                            .progressViewStyle(.circular)
-                    } else {
-                        Text("Commit Move")
+            if viewModel.isCommitting, let commitProgress = viewModel.commitProgress {
+                VStack(alignment: .leading, spacing: 8) {
+                    ProgressView(value: commitProgress.fractionCompleted)
+
+                    Text(commitProgress.statusMessage)
+                        .font(.subheadline.weight(.semibold))
+
+                    Text(viewModel.commitProgressSummary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+
+                    if let currentFileName = commitProgress.currentFileName {
+                        Text("Current file: \(currentFileName)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    if let lastProcessedFileName = commitProgress.lastProcessedFileName {
+                        Text("Last processed: \(lastProcessedFileName)")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    HStack {
+                        Spacer()
+                        Button("Cancel Commit", role: .destructive) {
+                            viewModel.cancelCommit()
+                        }
                     }
                 }
-                .disabled(viewModel.commitMoveCount == 0 || viewModel.isCommitting || !viewModel.commitArmed)
+            } else {
+                HStack {
+                    Spacer()
+                    Button {
+                        viewModel.requestCommit()
+                    } label: {
+                        Text("Review Commit Scope")
+                    }
+                    .disabled(viewModel.commitMoveCount == 0 || !viewModel.commitArmed)
+                }
             }
 
             Toggle(
@@ -577,6 +655,7 @@ private struct ReviewGroupView: View {
             )
             .toggleStyle(.checkbox)
             .font(.footnote)
+            .disabled(viewModel.isCommitting)
         }
     }
 
@@ -672,6 +751,267 @@ private struct ReviewGroupView: View {
         if let image = await viewModel.thumbnail(for: itemID, maxPixel: 3000), highlightedItemID == itemID {
             previewImage = image
         }
+    }
+}
+
+private struct CommitPreviewSheet: View {
+    @EnvironmentObject private var viewModel: ReviewViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    private let previewDestinations: [CommitDestination] = [.keep, .delete, .sendAndDelete]
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("Review Commit Scope")
+                            .font(.title2.bold())
+                        Text("Confirm the exact source, destination paths, and sample files before any move begins.")
+                            .foregroundStyle(.secondary)
+                    }
+
+                    CommitPathCard(title: "Source Folder", path: viewModel.sourceFolderDisplayText)
+                    CommitPathCard(title: "Destination Root", path: viewModel.destinationRootDisplayText)
+
+                    ForEach(previewDestinations, id: \.rawValue) { destination in
+                        CommitPreviewDestinationCard(
+                            title: destination.folderName,
+                            path: viewModel.destinationPath(for: destination),
+                            count: viewModel.commitCount(for: destination),
+                            samples: viewModel.commitSamples(for: destination),
+                            remainingCount: viewModel.remainingSampleCount(for: destination)
+                        )
+                    }
+
+                    Text("Reviewed files only will move. Existing name conflicts are auto-renamed instead of overwritten.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .padding(24)
+            }
+            .frame(minWidth: 640, minHeight: 560)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") {
+                        dismiss()
+                    }
+                }
+
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Confirm Commit") {
+                        dismiss()
+                        viewModel.confirmCommitPreview()
+                    }
+                    .disabled(viewModel.commitMoveCount == 0)
+                }
+            }
+        }
+    }
+}
+
+private struct CommitResultsSheet: View {
+    @EnvironmentObject private var viewModel: ReviewViewModel
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    if let result = viewModel.lastCommitResult {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text(viewModel.commitResultsTitle)
+                                .font(.title2.bold())
+                            Text(resultsSummaryText(for: result))
+                                .foregroundStyle(.secondary)
+                        }
+
+                        CommitPathCard(title: "Destination Root", path: result.destinationPaths.destinationRootURL.path)
+
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Outcome")
+                                .font(.headline)
+                            Text("Requested: \(result.totalOperationCount)")
+                            Text("Processed: \(result.processedCount)")
+                            Text("Moved: \(result.totalMovedCount)")
+                            Text("Keep: \(result.movedToKeepCount)  •  Delete: \(result.movedToDeleteCount)  •  Send and Delete: \(result.movedToSendAndDeleteCount)")
+                            Text("Renamed: \(result.renamedCount)  •  Missing: \(result.skippedMissingSourceCount)  •  Failures: \(result.failureCount)")
+                            if result.wasCancelled {
+                                Text("Remaining unprocessed: \(result.remainingCount)")
+                            }
+                        }
+                        .font(.body)
+
+                        if !result.renamedItems.isEmpty {
+                            CommitResultSection(title: "Renamed On Conflict") {
+                                ForEach(result.renamedItems) { renamedItem in
+                                    CommitResultRow(
+                                        title: "\(renamedItem.sourceFileName) → \(renamedItem.finalFileName)",
+                                        subtitle: renamedItem.destinationPath
+                                    )
+                                }
+                            }
+                        }
+
+                        if !result.skippedMissingSources.isEmpty {
+                            CommitResultSection(title: "Skipped Missing Sources") {
+                                ForEach(result.skippedMissingSources) { missingItem in
+                                    CommitResultRow(
+                                        title: missingItem.sourceFileName,
+                                        subtitle: "Missing at commit time. Intended destination: \(missingItem.destinationFolderPath)"
+                                    )
+                                }
+                            }
+                        }
+
+                        if !result.failures.isEmpty {
+                            CommitResultSection(title: "Failures") {
+                                ForEach(result.failures) { failure in
+                                    CommitResultRow(
+                                        title: failure.sourceFileName,
+                                        subtitle: "\(failure.message)\nDestination: \(failure.destinationFolderPath)"
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        Text("No commit results available.")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .padding(24)
+            }
+            .frame(minWidth: 680, minHeight: 560)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done") {
+                        dismiss()
+                    }
+                }
+            }
+        }
+    }
+
+    private func resultsSummaryText(for result: CommitExecutionResult) -> String {
+        if result.wasCancelled {
+            return "The commit stopped before all files were processed. Already moved files were left in their destination folders."
+        }
+
+        if result.hasIssues {
+            return "Some files moved successfully, but the run also included skips or failures. Review the details below before continuing."
+        }
+
+        return "All requested reviewed files were moved successfully."
+    }
+}
+
+private struct CommitPathCard: View {
+    let title: String
+    let path: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+
+            Text(path)
+                .font(.callout.monospaced())
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(Color.primary.opacity(0.06))
+                )
+        }
+    }
+}
+
+private struct CommitPreviewDestinationCard: View {
+    let title: String
+    let path: String
+    let count: Int
+    let samples: [String]
+    let remainingCount: Int
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text(title)
+                    .font(.headline)
+                Spacer()
+                Text("\(count) file(s)")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+            }
+
+            Text(path)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+                .foregroundStyle(.secondary)
+
+            if samples.isEmpty {
+                Text("No files queued for this destination.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(samples, id: \.self) { sample in
+                        Text("- \(sample)")
+                            .font(.caption)
+                    }
+
+                    if remainingCount > 0 {
+                        Text("- \(remainingCount) more")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            RoundedRectangle(cornerRadius: 14)
+                .fill(Color.primary.opacity(0.04))
+        )
+    }
+}
+
+private struct CommitResultSection<Content: View>: View {
+    let title: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title)
+                .font(.headline)
+            VStack(alignment: .leading, spacing: 8) {
+                content
+            }
+        }
+    }
+}
+
+private struct CommitResultRow: View {
+    let title: String
+    let subtitle: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            Text(subtitle)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.primary.opacity(0.04))
+        )
     }
 }
 
